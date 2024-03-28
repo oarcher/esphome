@@ -74,10 +74,10 @@ def validate_safe_mode(config):
 
 
 def _declare_request_class(value):
-    if CORE.using_esp_idf:
+    if CORE.using_esp_idf or CORE.is_esp32:
         return cv.declare_id(OtaHttpIDF)(value)
 
-    if CORE.is_esp8266 or CORE.is_esp32 or CORE.is_rp2040:
+    if CORE.is_esp8266 or CORE.is_rp2040:
         return cv.declare_id(OtaHttpArduino)(value)
     return NotImplementedError
 
@@ -144,9 +144,9 @@ async def to_code(config):
                 "CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY",
                 config.get(CONF_EXCLUDE_CERTIFICATE_BUNDLE),
             )
-        else:
-            cg.add_library("WiFiClientSecure", None)
-            cg.add_library("HTTPClient", None)
+        #else:
+        #    cg.add_library("WiFiClientSecure", None)
+        #    cg.add_library("HTTPClient", None)
     if CORE.is_esp8266:
         cg.add_library("ESP8266HTTPClient", None)
     if CORE.is_rp2040 and CORE.using_arduino:

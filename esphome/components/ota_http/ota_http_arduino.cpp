@@ -1,5 +1,5 @@
 #include "ota_http.h"
-
+#ifndef USE_ESP32
 #ifdef USE_ARDUINO
 #include "ota_http_arduino.h"
 #include "esphome/core/defines.h"
@@ -149,3 +149,4 @@ int OtaHttpArduino::set_stream_ptr_() {
 }  // namespace esphome
 
 #endif  // USE_ARDUINO
+#endif  // USE_ESP32

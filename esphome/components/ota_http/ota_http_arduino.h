@@ -2,6 +2,7 @@
 
 #include "ota_http.h"
 
+#ifndef USE_ESP32
 #ifdef USE_ARDUINO
 
 #include "esphome/core/automation.h"
@@ -41,3 +42,4 @@ class OtaHttpArduino : public OtaHttpComponent {
 }  // namespace esphome
 
 #endif  // USE_ARDUINO
+#endif  // USE_ESP32

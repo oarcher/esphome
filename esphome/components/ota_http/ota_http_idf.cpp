@@ -1,4 +1,4 @@
-#ifdef USE_ESP_IDF
+#if defined USE_ESP_IDF || defined USE_ESP32
 
 #include "ota_http_idf.h"
 #include "esphome/core/defines.h"
@@ -90,4 +90,4 @@ void OtaHttpIDF::http_end() {
 }  // namespace ota_http
 }  // namespace esphome
 
-#endif  // USE_ESP_IDF
+#endif  // USE_ESP_IDF || USE_ESP32

@@ -2,7 +2,7 @@
 
 #include "ota_http.h"
 
-#ifdef USE_ESP_IDF
+#if defined USE_ESP_IDF || defined USE_ESP32
 
 #include "esp_http_client.h"
 
@@ -22,4 +22,4 @@ class OtaHttpIDF : public OtaHttpComponent {
 }  // namespace ota_http
 }  // namespace esphome
 
-#endif  // USE_ESP_IDF
+#endif  // USE_ESP_IDF || USE_ESP32
