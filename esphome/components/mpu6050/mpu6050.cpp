@@ -12,7 +12,7 @@ void MPU6050Component::setup() {
 
   // Hardware reset
   if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, 1 << MPU6050_BIT_RESET)) {
-    ESP_LOGE(TAG, "Failed to reset MPU6050");
+    ESP_LOGE(TAG, "  Failed to reset MPU6050");
     this->mark_failed();
     return;
   }
@@ -21,7 +21,7 @@ void MPU6050Component::setup() {
   uint8_t who_am_i;
   if (!this->read_byte(MPU6050_REGISTER_WHO_AM_I, &who_am_i) ||
       (who_am_i != 0x68 && who_am_i != 0x70 && who_am_i != 0x98)) {
-    ESP_LOGE(TAG, "  Failed to know who am I");
+    ESP_LOGE(TAG, "  MPU6050 not found");
     this->mark_failed();
     return;
   }
@@ -30,6 +30,7 @@ void MPU6050Component::setup() {
   // Setup power management
   uint8_t power_management;
   if (!this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, &power_management)) {
+    ESP_LOGE(TAG, "  Unable to read power management");
     this->mark_failed();
     return;
   }
@@ -38,6 +39,7 @@ void MPU6050Component::setup() {
   power_management &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
   ESP_LOGV(TAG, "  Output power_management: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(power_management));
   if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, power_management)) {
+    ESP_LOGE(TAG, "  Unable to set power management");
     this->mark_failed();
     return;
   }
