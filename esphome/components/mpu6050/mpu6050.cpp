@@ -10,6 +10,14 @@ static const char *const TAG = "mpu6050";
 void MPU6050Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MPU6050 component...");
 
+  // Hardware reset
+  if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, 1 << MPU6050_BIT_RESET)) {
+    ESP_LOGE(TAG, "Failed to reset MPU6050");
+    this->mark_failed();
+    return;
+  }
+  delay(100);  // NOLINT
+
   uint8_t who_am_i;
   if (!this->read_byte(MPU6050_REGISTER_WHO_AM_I, &who_am_i) ||
       (who_am_i != 0x68 && who_am_i != 0x70 && who_am_i != 0x98)) {
