@@ -7,6 +7,8 @@ namespace mpu6050 {
 
 static const char *const TAG = "mpu6050";
 
+static const bool low_power = true;
+
 void MPU6050Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MPU6050 component...");
 
@@ -34,6 +36,18 @@ void MPU6050Component::setup() {
     this->mark_failed();
     return;
   }
+
+  if (low_power) {
+    // Enable cycle mode (low power)
+    power_management &= (1 << MPU6050_BIT_CYCLE_ENABLED);
+
+    // Enable sleep
+    power_management &= (1 << MPU6050_BIT_SLEEP_ENABLED);
+
+  } else {
+    // Disable sleep
+    power_management &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
+  }
   ESP_LOGV(TAG, "  Input power_management: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(power_management));
   // Disable sleep
   power_management &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
@@ -42,6 +56,16 @@ void MPU6050Component::setup() {
     ESP_LOGE(TAG, "  Unable to set power management");
     this->mark_failed();
     return;
+  }
+
+  if (low_power) {
+    // FIXME: read power byte
+    // Set frequency of wake-ups in low power mode to 1.25 Hz
+    if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_2, MPU6050_LP_WAKE_CTRL_1_25HZ)) {
+      ESP_LOGE(TAG, "Failed to set low power wake control to 1.25 Hz");
+      this->mark_failed();
+      return;
+    }
   }
 
 #ifdef USE_MPU6050_INTERRUPT
