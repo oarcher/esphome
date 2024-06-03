@@ -25,10 +25,7 @@ const uint8_t MPU6050_BIT_RESET = 7;
 const uint8_t MPU6050_BIT_MOTION_DET = 6;
 const uint8_t MPU6050_CLOCK_SOURCE_X_GYRO = 0b001;
 const uint8_t MPU6050_SCALE_2000_DPS = 0b11;
-const uint8_t MPU6050_LP_WAKE_CTRL_1_25HZ = 0x00;
-const uint8_t MPU6050_LP_WAKE_CTRL_5HZ = 0x01;
-const uint8_t MPU6050_LP_WAKE_CTRL_20HZ = 0x10;
-const uint8_t MPU6050_LP_WAKE_CTRL_40HZ = 0x11;
+const uint8_t MPU6050_LP_WAKE_CTRL_1_25HZ = 0b00111111;
 const float MPU6050_SCALE_DPS_PER_DIGIT_2000 = 0.060975f;
 const uint8_t MPU6050_RANGE_2G = 0b00;
 const float MPU6050_RANGE_PER_DIGIT_2G = 0.000061f;
@@ -42,6 +39,10 @@ class MPU6050Component : public i2c::I2CDevice, public Component {
 
   float get_setup_priority() const override;
 
+  void low_power();
+  void restore_power();
+  void sleep();
+
 #ifdef USE_MPU6050_INTERRUPT
   void set_interrupt(uint8_t threshold, uint8_t duration);
 #endif  // USE_MPU6050_INTERRUPT
@@ -51,6 +52,8 @@ class MPU6050Component : public i2c::I2CDevice, public Component {
   uint8_t threshold_;
   uint8_t duration_;
 #endif  // USE_MPU6050_INTERRUPT
+  uint8_t power_management_1_;
+  uint8_t power_management_2_;
 };
 ;
 

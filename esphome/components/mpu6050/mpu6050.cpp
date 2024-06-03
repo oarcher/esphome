@@ -7,8 +7,6 @@ namespace mpu6050 {
 
 static const char *const TAG = "mpu6050";
 
-static const bool low_power = true;
-
 void MPU6050Component::setup() {
   ESP_LOGCONFIG(TAG, "Setting up MPU6050 component...");
 
@@ -30,42 +28,25 @@ void MPU6050Component::setup() {
 
   ESP_LOGV(TAG, "  Setting up Power Management...");
   // Setup power management
-  uint8_t power_management;
-  if (!this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, &power_management)) {
+  if (!this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, &this->power_management_1_)) {
     ESP_LOGE(TAG, "  Unable to read power management");
     this->mark_failed();
     return;
   }
 
-  if (low_power) {
-    // Enable cycle mode (low power)
-    power_management &= (1 << MPU6050_BIT_CYCLE_ENABLED);
-
-    // Enable sleep
-    power_management &= (1 << MPU6050_BIT_SLEEP_ENABLED);
-
-  } else {
-    // Disable sleep
-    power_management &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
-  }
-  ESP_LOGV(TAG, "  Input power_management: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(power_management));
+  ESP_LOGV(TAG, "  Input power_management_1:  0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(this->power_management_1_));
   // Disable sleep
-  power_management &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
-  ESP_LOGV(TAG, "  Output power_management: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(power_management));
-  if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, power_management)) {
+  this->power_management_1_ &= ~(1 << MPU6050_BIT_SLEEP_ENABLED);
+  this->power_management_1_ &= 0b11111000;  // clear bits 0:2 (CLKSEL: use internal clock)
+
+  this->power_management_1_ |= MPU6050_CLOCK_SOURCE_X_GYRO;
+  this->power_management_1_ &= ~(1 << MPU6050_BIT_TEMPERATURE_DISABLED);
+
+  ESP_LOGV(TAG, "  Output power_management_1: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(this->power_management_1_));
+  if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, this->power_management_1_)) {
     ESP_LOGE(TAG, "  Unable to set power management");
     this->mark_failed();
     return;
-  }
-
-  if (low_power) {
-    // FIXME: read power byte
-    // Set frequency of wake-ups in low power mode to 1.25 Hz
-    if (!this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_2, MPU6050_LP_WAKE_CTRL_1_25HZ)) {
-      ESP_LOGE(TAG, "Failed to set low power wake control to 1.25 Hz");
-      this->mark_failed();
-      return;
-    }
   }
 
 #ifdef USE_MPU6050_INTERRUPT
@@ -107,6 +88,38 @@ void MPU6050Component::setup() {
     // return;
   }
 #endif  // USE_MPU6050_INTERRUPT
+
+  ESP_LOGV(TAG, "  Setting up Gyro Config...");
+  // Set scale - 2000DPS
+  uint8_t gyro_config;
+  if (!this->read_byte(MPU6050_REGISTER_GYRO_CONFIG, &gyro_config)) {
+    this->mark_failed();
+    return;
+  }
+  ESP_LOGV(TAG, "    Input gyro_config: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(gyro_config));
+  gyro_config &= 0b11100111;
+  gyro_config |= MPU6050_SCALE_2000_DPS << 3;
+  ESP_LOGV(TAG, "    Output gyro_config: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(gyro_config));
+  if (!this->write_byte(MPU6050_REGISTER_GYRO_CONFIG, gyro_config)) {
+    this->mark_failed();
+    return;
+  }
+
+  ESP_LOGV(TAG, "  Setting up Accel Config...");
+  // Set range - 2G
+  uint8_t accel_config;
+  if (!this->read_byte(MPU6050_REGISTER_ACCEL_CONFIG, &accel_config)) {
+    this->mark_failed();
+    return;
+  }
+  ESP_LOGV(TAG, "    Input accel_config: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(accel_config));
+  accel_config &= 0b11100111;
+  accel_config |= (MPU6050_RANGE_2G << 3);
+  ESP_LOGV(TAG, "    Output accel_config: 0b" BYTE_TO_BINARY_PATTERN, BYTE_TO_BINARY(accel_config));
+  if (!this->write_byte(MPU6050_REGISTER_ACCEL_CONFIG, accel_config)) {
+    this->mark_failed();
+    return;
+  }
 }
 
 void MPU6050Component::dump_config() {
@@ -126,6 +139,33 @@ void MPU6050Component::set_interrupt(uint8_t threshold, uint8_t duration) {
   this->duration_ = duration;
 }
 #endif  // USE_MPU6050_INTERRUPT
+
+void MPU6050Component::low_power() {
+  ESP_LOGI(TAG, "Entering low power mode");
+  this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_2, &this->power_management_2_);
+  uint8_t value;
+  // set internal clock source, and disable all accel/gyro, except xaccel
+  value = 0b00011111;
+  this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_2, value);
+
+  this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, &this->power_management_1_);
+  // allow cycle, and disable temp sensor (disabling temp seems to not work)
+  value = 0b00101000;
+  this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, value);
+}
+
+void MPU6050Component::restore_power() {
+  ESP_LOGI(TAG, "Restoring power");
+  this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, this->power_management_1_);
+  this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_2, this->power_management_2_);
+}
+
+void MPU6050Component::sleep() {
+  ESP_LOGI(TAG, "Entering sleep mode");
+  this->read_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, &this->power_management_1_);
+  uint8_t value = this->power_management_1_ | (1 << MPU6050_BIT_SLEEP_ENABLED);
+  this->write_byte(MPU6050_REGISTER_POWER_MANAGEMENT_1, value);
+}
 
 }  // namespace mpu6050
 }  // namespace esphome

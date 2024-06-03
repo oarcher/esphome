@@ -12,7 +12,6 @@ const float GRAVITY_EARTH = 9.80665f;
 
 class MPU6050Sensor : public PollingComponent {
  public:
-  void setup() override;
   void dump_config() override;
   void set_parent(MPU6050Component *parent) { this->parent_ = parent; }
   void update() override;
