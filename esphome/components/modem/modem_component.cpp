@@ -14,6 +14,11 @@
 #include <lwip/dns.h>
 #include <cstring>
 #include <iostream>
+#ifdef USE_MODEM_DNS
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif
 
 static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
 static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
@@ -112,11 +117,6 @@ void ModemComponent::setup() {
                                              this->password_.c_str()),
                       "ppp set auth");
   }
-  // dns setup not needed (perhaps fallback ?)
-  // esp_netif_dns_info_t dns_main = {};
-  // dns_main.ip.u_addr.ip4.addr = esp_ip4addr_aton("8.8.8.8");
-  // dns_main.ip.type = ESP_IPADDR_TYPE_V4;
-  // ESPHL_ERROR_CHECK(esp_netif_set_dns_info(this->ppp_netif_, ESP_NETIF_DNS_MAIN, &dns_main), "dns_main");
 
   // Register user defined event handers
   err = esp_event_handler_register(IP_EVENT, IP_EVENT_PPP_GOT_IP, &ModemComponent::got_ip_event_handler, nullptr);
@@ -219,10 +219,21 @@ void ModemComponent::start_connect_() {
   }
 }
 
+void ModemComponent::add_dns(network::IPAddress dns) { global_modem_component->dns_.push_back(dns); }
+
 void ModemComponent::got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
   const esp_netif_ip_info_t *ip_info = &event->ip_info;
   ESP_LOGW(TAG, "[IP event] Got IP " IPSTR, IP2STR(&ip_info->ip));
+#ifdef USE_MODEM_DNS
+  ESP_LOGI(TAG, "Overwritting dns server");
+  size_t idns = 0;
+  for (const ip_addr_t dns : global_modem_component->dns_) {
+    // inet_pton(AF_INET, "8.8.8.8", &dnsserver);
+    dns_setserver(idns, &dns);
+    ++idns;
+  }
+#endif
   global_modem_component->got_ipv4_address_ = true;
   global_modem_component->connected_ = true;
 }

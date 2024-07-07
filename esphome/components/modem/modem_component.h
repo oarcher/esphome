@@ -61,6 +61,7 @@ class ModemComponent : public Component {
   void set_ready_bsensor(binary_sensor::BinarySensor *modem_ready) { this->modem_ready_ = modem_ready; }
   void add_init_at_command(const std::string &cmd) { this->init_at_commands_.push_back(cmd); }
   bool modem_ready() { return this->modem_ready_->state; }
+  void add_dns(network::IPAddress dns);
   std::unique_ptr<DCE> dce;
 
  protected:
@@ -82,6 +83,7 @@ class ModemComponent : public Component {
   esp_netif_t *ppp_netif_{nullptr};
   esp_modem_dte_config_t dte_config_;
   ModemComponentState state_{ModemComponentState::STOPPED};
+  std::vector<network::IPAddress> dns_;
   void start_connect_();
   bool started_{false};
   bool connected_{false};

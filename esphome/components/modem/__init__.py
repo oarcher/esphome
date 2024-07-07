@@ -6,12 +6,15 @@ from esphome.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_MODEL,
+    CONF_DNS1,
+    CONF_DNS2,
 )
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.core import coroutine_with_priority
 from esphome.components.esp32 import add_idf_component, add_idf_sdkconfig_option
 from esphome.components.binary_sensor import BinarySensor
+from esphome.components.network import IPAddress
 
 CODEOWNERS = ["@oarcher"]
 DEPENDENCIES = ["esp32"]
@@ -49,6 +52,8 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_PASSWORD): cv.string,
             cv.Optional(CONF_USE_ADDRESS): cv.string,
             cv.Optional(CONF_INIT_AT): cv.All(cv.ensure_list(cv.string)),
+            cv.Optional(CONF_DNS1): cv.ipv4,
+            cv.Optional(CONF_DNS2): cv.ipv4,
         }
     ).extend(cv.COMPONENT_SCHEMA),
     cv.require_framework_version(
@@ -103,6 +108,13 @@ async def to_code(config):
     if modem_ready := config.get(CONF_READY, None):
         modem_ready_sensor = await cg.get_variable(modem_ready)
         cg.add(var.set_ready_bsensor(modem_ready_sensor))
+
+    if dns1 := config.get(CONF_DNS1, None):
+        cg.add(var.add_dns(IPAddress(*dns1.args)))
+    if dns2 := config.get(CONF_DNS2, None):
+        cg.add(var.add_dns(IPAddress(*dns2.args)))
+    if dns1 or dns2:
+        cg.add_define("USE_MODEM_DNS")
 
     cg.add(var.set_model(config[CONF_MODEL]))
     cg.add(var.set_apn(config[CONF_APN]))
