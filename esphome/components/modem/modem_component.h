@@ -1,11 +1,11 @@
 #pragma once
 
+#ifdef USE_ESP_IDF
+
 #include <memory>
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
-
-#ifdef USE_ESP_IDF
 
 // esp_modem will use esphome logger (needed if other components include esphome/core/log.h)
 // We need to do this because "cxx_include/esp_modem_api.hpp" is not a pure C++ header, and use logging.
