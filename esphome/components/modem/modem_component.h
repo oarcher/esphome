@@ -6,6 +6,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/log.h"
 #include "esphome/components/network/util.h"
+#include "esphome/components/uart/uart.h"
 
 // esp_modem will use esphome logger (needed if other components include esphome/core/log.h)
 // We need to do this because "cxx_include/esp_modem_api.hpp" is not a pure C++ header, and use logging.
@@ -38,7 +39,7 @@ enum class ModemComponentState {
 
 enum class ModemModel { BG96, SIM800, SIM7000, SIM7070, SIM7600, UNKNOWN };
 
-class ModemComponent : public Component {
+class ModemComponent : public Component, public esphome::uart::UARTDevice {
  public:
   ModemComponent();
   void dump_config() override;
@@ -50,8 +51,6 @@ class ModemComponent : public Component {
   network::IPAddresses get_ip_addresses();
   std::string get_use_address() const;
   void set_use_address(const std::string &use_address);
-  void set_rx_pin(gpio_num_t rx_pin) { this->rx_pin_ = rx_pin; }
-  void set_tx_pin(gpio_num_t tx_pin) { this->tx_pin_ = tx_pin; }
   void set_username(const std::string &username) { this->username_ = username; }
   void set_password(const std::string &password) { this->password_ = password; }
   void set_pin_code(const std::string &pin_code) { this->pin_code_ = pin_code; }
@@ -70,10 +69,6 @@ class ModemComponent : public Component {
 
  protected:
   void reset_();
-  // void close_();
-  // bool linked_();
-  gpio_num_t rx_pin_ = gpio_num_t::GPIO_NUM_NC;
-  gpio_num_t tx_pin_ = gpio_num_t::GPIO_NUM_NC;
   std::string pin_code_;
   std::string username_;
   std::string password_;
@@ -98,7 +93,7 @@ class ModemComponent : public Component {
   static void ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
   void dump_connect_params_();
   std::string use_address_;
-  uint32_t command_delay_ = 500;
+  uint32_t command_delay_ = 5000;  // FIXME 500
   CallbackManager<void(ModemComponentState)> on_state_callback_;
 };
 

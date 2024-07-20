@@ -1,14 +1,16 @@
 #ifdef USE_ESP_IDF
 #include "modem_component.h"
-#include "esphome_uart_terminal.h"
+#include "esphome_uart_terminal.h"  // to be removed
 #include "esphome/core/log.h"
 #include "esphome/core/application.h"
 #include "esphome/core/defines.h"
 #include "esphome/components/network/util.h"
+// #include "esphome/components/uart/uart_component.h"
 #include <esp_netif.h>
 #include <esp_netif_ppp.h>
 #include <esp_event.h>
 #include <cxx_include/esp_modem_dte.hpp>
+#include <cxx_include/esp_modem_terminal.hpp>
 #include <esp_modem_config.h>
 #include <cxx_include/esp_modem_api.hpp>
 #include <driver/gpio.h>
@@ -17,12 +19,6 @@
 #include <iostream>
 #include "esp_idf_version.h"
 #include "esp_task_wdt.h"
-
-static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
-static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
-static const uint8_t CONFIG_MODEM_UART_EVENT_QUEUE_SIZE = 30;
-static const size_t CONFIG_MODEM_UART_EVENT_TASK_STACK_SIZE = 2048;
-static const uint8_t CONFIG_MODEM_UART_EVENT_TASK_PRIORITY = 5;
 
 namespace esphome {
 namespace modem {
@@ -37,6 +33,147 @@ ModemComponent *global_modem_component = nullptr;  // NOLINT(cppcoreguidelines-a
     this->mark_failed(); \
     return; \
   }
+
+struct uart_task {
+  explicit uart_task(size_t stack_size, size_t priority, void *task_param, TaskFunction_t task_function)
+      : task_handle(nullptr) {
+    BaseType_t ret = xTaskCreate(task_function, "uart_task", stack_size, task_param, priority, &task_handle);
+    ESP_MODEM_THROW_IF_FALSE(ret == pdTRUE, "create uart event task failed");
+  }
+
+  ~uart_task() {
+    if (task_handle) {
+      vTaskDelete(task_handle);
+    }
+  }
+
+  TaskHandle_t task_handle; /*!< UART event task handle */
+};
+class EsphomeUartTerminal : public Terminal {
+ public:
+  EsphomeUartTerminal(esphome::uart::UARTDevice *esphome_uart, const esp_modem_dte_config *config)
+      : event_queue(), signal(), task_handle(config->task_stack_size, config->task_priority, this, s_task) {
+    this->esphome_uart_ = esphome_uart;
+  }
+  // task_handle(config->task_stack_size, config->task_priority, this, s_task) {}
+
+  ~EsphomeUartTerminal() override = default;
+
+  void start() override { signal.set(TASK_START); }
+
+  void stop() override { signal.set(TASK_STOP); }
+
+  int write(uint8_t *data, size_t len) override {
+    ESP_LOGV(TAG, "uart write %d bytes", len);
+    this->esphome_uart_->write_array(std::vector<uint8_t>(data, data + len));
+    this->esphome_uart_->flush();
+    return len;
+  }
+
+  int read(uint8_t *data, size_t len) override {
+    ESP_LOGV(TAG, "uart read. want: %d , avail: %d", len, this->esphome_uart_->available());
+    if (this->esphome_uart_->read_array(data, len)) {
+      ESP_LOGV(TAG, "uart read ok");
+      return len;
+    } else {
+      ESP_LOGW(TAG, "esphome uart short read");
+      return 0;  // not able to know how many bytes read
+    }
+  }
+
+  void set_read_cb(std::function<bool(uint8_t *data, size_t len)> f) override {
+    ESP_LOGV(TAG, "set_read_cb");
+    on_read = std::move(f);
+  }
+
+ private:
+  esphome::uart::UARTDevice *esphome_uart_;
+  static void s_task(void *task_param) {
+    auto t = static_cast<EsphomeUartTerminal *>(task_param);
+    t->task();
+    vTaskDelete(nullptr);
+  }
+
+  void task();
+  bool get_event(uart_event_t &event, uint32_t time_ms) {
+    ESP_LOGV(TAG, "get_event");
+    return xQueueReceive(event_queue, &event, pdMS_TO_TICKS(time_ms));
+  }
+
+  void reset_events() {
+    ESP_LOGV(TAG, "reset_events");
+    this->esphome_uart_->flush();
+    xQueueReset(event_queue);
+  }
+
+  static const size_t TASK_INIT = BIT0;
+  static const size_t TASK_START = BIT1;
+  static const size_t TASK_STOP = BIT2;
+
+  QueueHandle_t event_queue;
+  SignalGroup signal;
+  uart_task task_handle;
+};
+
+void EsphomeUartTerminal::task() {
+  ESP_LOGV(TAG, "task");
+  uart_event_t event;
+  size_t len;
+  signal.set(TASK_INIT);
+  signal.wait_any(TASK_START | TASK_STOP, portMAX_DELAY);
+  if (signal.is_any(TASK_STOP)) {
+    return;  // exits to the static method where the task gets deleted
+  }
+  while (signal.is_any(TASK_START)) {
+    if (get_event(event, 100)) {
+      switch (event.type) {
+        case UART_DATA:
+          ESP_LOGV(TAG, "Event: UART_DATA");
+          // uart_get_buffered_data_len(uart.port, &len);
+          len = 0;
+          if (len && on_read) {
+            on_read(nullptr, len);
+          }
+          break;
+        case UART_FIFO_OVF:
+          ESP_LOGW(TAG, "HW FIFO Overflow");
+          if (on_error) {
+            on_error(terminal_error::BUFFER_OVERFLOW);
+          }
+          reset_events();
+          break;
+        case UART_BUFFER_FULL:
+          ESP_LOGW(TAG, "Ring Buffer Full");
+          if (on_error) {
+            on_error(terminal_error::BUFFER_OVERFLOW);
+          }
+          reset_events();
+          break;
+        case UART_BREAK:
+          ESP_LOGW(TAG, "Rx Break");
+          if (on_error) {
+            on_error(terminal_error::UNEXPECTED_CONTROL_FLOW);
+          }
+          break;
+        case UART_PARITY_ERR:
+          ESP_LOGE(TAG, "Parity Error");
+          if (on_error) {
+            on_error(terminal_error::CHECKSUM_ERROR);
+          }
+          break;
+        case UART_FRAME_ERR:
+          ESP_LOGE(TAG, "Frame Error");
+          if (on_error) {
+            on_error(terminal_error::UNEXPECTED_CONTROL_FLOW);
+          }
+          break;
+        default:
+          ESP_LOGW(TAG, "unknown uart event type: %d", event.type);
+          break;
+      }
+    }
+  }
+}
 
 std::string command_result_to_string(command_result err) {
   std::string res = "UNKNOWN";
@@ -151,6 +288,19 @@ void ModemComponent::setup() {
   // create dte and dce
   this->reset_();
 
+  // const char ASCII_CR = 0x0D;
+  // const char ASCII_LF = 0x0A;
+  // const char *cmd = "AT+CGSN\r\n";
+  //
+  // const auto *data = reinterpret_cast<const uint8_t *>(cmd);
+  // ESP_LOGD(TAG, "len: %d", strlen(cmd));
+
+  // delay(3000);
+
+  // this->write_str(cmd);
+  // this->write_byte(ASCII_CR);
+  // this->write_byte(ASCII_LF);
+
   ESP_LOGV(TAG, "Setup finished");
 }
 
@@ -165,22 +315,20 @@ void ModemComponent::reset_() {
   esp_modem_dte_config_t dte_config = ESP_MODEM_DTE_DEFAULT_CONFIG();
   this->dte_config_ = dte_config;
 
-  this->dte_config_.uart_config.tx_io_num = this->tx_pin_;
-  this->dte_config_.uart_config.rx_io_num = this->rx_pin_;
-  // this->dte_config_.uart_config.rts_io_num =  static_cast<gpio_num_t>( CONFIG_EXAMPLE_MODEM_UART_RTS_PIN);
-  // this->dte_config_.uart_config.cts_io_num =  static_cast<gpio_num_t>( CONFIG_EXAMPLE_MODEM_UART_CTS_PIN);
-  this->dte_config_.uart_config.rx_buffer_size = CONFIG_MODEM_UART_RX_BUFFER_SIZE;
-  this->dte_config_.uart_config.tx_buffer_size = CONFIG_MODEM_UART_TX_BUFFER_SIZE;
-  this->dte_config_.uart_config.event_queue_size = CONFIG_MODEM_UART_EVENT_QUEUE_SIZE;
-  this->dte_config_.task_stack_size = CONFIG_MODEM_UART_EVENT_TASK_STACK_SIZE * 2;
-  this->dte_config_.task_priority = CONFIG_MODEM_UART_EVENT_TASK_PRIORITY;
-  this->dte_config_.dte_buffer_size = CONFIG_MODEM_UART_RX_BUFFER_SIZE / 2;
+  // this->dte_config_.uart_config.event_queue_size = 30;
+  this->dte_config_.task_stack_size = 4096;
+  this->dte_config_.task_priority = 5;
+  this->dte_config_.dte_buffer_size = 1024;
 
   // this->dte_ = create_uart_dte(&this->dte_config_);
   // auto term = create_uart_terminal(&this->dte_config_);
-  auto term = make_unique<uart::UartTerminal>(&this->dte_config_);
+  // auto term = make_unique<uart::UartTerminal>(&this->dte_config_);
+  // term->start();
+  auto term = make_unique<EsphomeUartTerminal>(this, &this->dte_config_);
   term->start();
-  this->dte_ = std::make_shared<DTE>(&this->dte_config_, std::move(term));
+
+  // this->dte_ = std::make_shared<DTE>(&this->dte_config_, std::move(term));
+  this->dte_ = std::make_shared<DTE>(std::move(term));
 
   ESP_LOGV(TAG, "PPP netif setup");
 

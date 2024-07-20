@@ -1,8 +1,6 @@
 from esphome.const import (
     CONF_ID,
     CONF_USE_ADDRESS,
-    CONF_TX_PIN,
-    CONF_RX_PIN,
     CONF_USERNAME,
     CONF_PASSWORD,
     CONF_MODEL,
@@ -16,9 +14,10 @@ import esphome.config_validation as cv
 from esphome.core import coroutine_with_priority
 from esphome.components.esp32 import add_idf_component, add_idf_sdkconfig_option
 from esphome import automation
+from esphome.components import uart
 
 CODEOWNERS = ["@oarcher"]
-DEPENDENCIES = ["esp32"]
+DEPENDENCIES = ["esp32", "uart"]
 AUTO_LOAD = ["network"]
 # following should be removed if conflicts are resolved (so we can have a wifi ap using modem)
 CONFLICTS_WITH = ["wifi", "captive_portal", "ethernet"]
@@ -30,7 +29,7 @@ CONF_INIT_AT = "init_at"
 CONF_ON_NOT_RESPONDING = "on_not_responding"
 
 modem_ns = cg.esphome_ns.namespace("modem")
-ModemComponent = modem_ns.class_("ModemComponent", cg.Component)
+ModemComponent = modem_ns.class_("ModemComponent", cg.Component, uart.UARTDevice)
 ModemComponentState = modem_ns.enum("ModemComponentState")
 ModemOnNotRespondingTrigger = modem_ns.class_(
     "ModemOnNotRespondingTrigger", automation.Trigger.template()
@@ -47,8 +46,6 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(ModemComponent),
-            cv.Required(CONF_TX_PIN): cv.positive_int,
-            cv.Required(CONF_RX_PIN): cv.positive_int,
             cv.Required(CONF_MODEL): cv.string,
             cv.Required(CONF_APN): cv.string,
             cv.Optional(CONF_DTR_PIN): cv.positive_int,
@@ -76,10 +73,16 @@ CONFIG_SCHEMA = cv.All(
                 }
             ),
         }
-    ).extend(cv.COMPONENT_SCHEMA),
+    )
+    .extend(cv.COMPONENT_SCHEMA)
+    .extend(uart.UART_DEVICE_SCHEMA),
     cv.require_framework_version(
         esp_idf=cv.Version(4, 0, 0),  # 5.2.0 OK
     ),
+)
+
+FINAL_VALIDATE_SCHEMA = uart.final_validate_device_schema(
+    "modem", require_rx=True, require_tx=True
 )
 
 
@@ -111,6 +114,9 @@ async def to_code(config):
     cg.add_define("USE_MODEM")
 
     var = cg.new_Pvariable(config[CONF_ID])
+    await cg.register_component(var, config)
+    await uart.register_uart_device(var, config)
+
     if use_address := config.get(CONF_USE_ADDRESS, None):
         cg.add(var.set_use_address(use_address))
 
@@ -134,11 +140,6 @@ async def to_code(config):
     cg.add(var.set_model(config[CONF_MODEL]))
     cg.add(var.set_apn(config[CONF_APN]))
 
-    gpio_num_t = cg.global_ns.enum("gpio_num_t")
-
-    cg.add(var.set_rx_pin(getattr(gpio_num_t, f"GPIO_NUM_{config[CONF_RX_PIN]}")))
-    cg.add(var.set_tx_pin(getattr(gpio_num_t, f"GPIO_NUM_{config[CONF_TX_PIN]}")))
-
     for conf in config.get(CONF_ON_NOT_RESPONDING, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         await automation.build_automation(trigger, [], conf)
@@ -150,5 +151,3 @@ async def to_code(config):
     for conf in config.get(CONF_ON_DISCONNECT, []):
         trigger = cg.new_Pvariable(conf[CONF_TRIGGER_ID], var)
         await automation.build_automation(trigger, [], conf)
-
-    await cg.register_component(var, config)
