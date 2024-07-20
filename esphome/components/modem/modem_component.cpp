@@ -1,6 +1,5 @@
 #ifdef USE_ESP_IDF
 #include "modem_component.h"
-#include "esphome_uart_terminal.h"
 #include "esphome/core/log.h"
 #include "esphome/core/application.h"
 #include "esphome/core/defines.h"
@@ -17,6 +16,8 @@
 #include <iostream>
 #include "esp_idf_version.h"
 #include "esp_task_wdt.h"
+// to be able to call create_uart_terminal
+#include "../private_include/uart_terminal.hpp"
 
 static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
 static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
@@ -177,8 +178,7 @@ void ModemComponent::reset_() {
   this->dte_config_.dte_buffer_size = CONFIG_MODEM_UART_RX_BUFFER_SIZE / 2;
 
   // this->dte_ = create_uart_dte(&this->dte_config_);
-  // auto term = create_uart_terminal(&this->dte_config_);
-  auto term = make_unique<uart::UartTerminal>(&this->dte_config_);
+  auto term = create_uart_terminal(&this->dte_config_);
   term->start();
   this->dte_ = std::make_shared<DTE>(&this->dte_config_, std::move(term));
 
