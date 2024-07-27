@@ -7,11 +7,22 @@
 #include "esphome/core/defines.h"
 #include "esphome/components/network/util.h"
 
+#include <driver/gpio.h>
 #include <esp_netif.h>
 #include <esp_netif_ppp.h>
 #include <esp_event.h>
-#include <driver/gpio.h>
+#include <esp_netif_ip_addr.h>
 #include <lwip/dns.h>
+
+#ifdef USE_MODEM_WIFI_AP
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+#include "esp_mac.h"
+#include "dhcpserver/dhcpserver.h"
+#endif
+#include <lwip/lwip_napt.h>
+#include <esp_wifi_default.h>
+#include <esp_wifi.h>
+#endif
 
 #include <cxx_include/esp_modem_dte.hpp>
 #include <esp_modem_config.h>
@@ -36,10 +47,10 @@
     ESP_LOGE(TAG, message ": %s", command_result_to_string(err).c_str()); \
   }
 
-static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
-static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
+static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 16384;  // 2048;
+static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 16384;  // 1024;
 static const uint8_t CONFIG_MODEM_UART_EVENT_QUEUE_SIZE = 30;
-static const size_t CONFIG_MODEM_UART_EVENT_TASK_STACK_SIZE = 2048;
+static const size_t CONFIG_MODEM_UART_EVENT_TASK_STACK_SIZE = 16384;  // 2048;
 static const uint8_t CONFIG_MODEM_UART_EVENT_TASK_PRIORITY = 5;
 
 namespace esphome {
@@ -378,6 +389,9 @@ void ModemComponent::loop() {
 
         this->dump_connect_params_();
         this->status_clear_warning();
+#ifdef USE_MODEM_WIFI_AP
+        this->wifi_ap_();
+#endif
 
       } else if (now - this->connect_begin_ > 45000) {
         ESP_LOGW(TAG, "Connecting via Modem failed! Re-connecting...");
@@ -554,13 +568,17 @@ void ModemComponent::dump_connect_params_() {
   ESP_LOGCONFIG(TAG, "  Subnet: %s", network::IPAddress(&ip.netmask).str().c_str());
   ESP_LOGCONFIG(TAG, "  Gateway: %s", network::IPAddress(&ip.gw).str().c_str());
 
-  const ip_addr_t *dns_main_ip = dns_getserver(ESP_NETIF_DNS_MAIN);
-  const ip_addr_t *dns_backup_ip = dns_getserver(ESP_NETIF_DNS_BACKUP);
-  const ip_addr_t *dns_fallback_ip = dns_getserver(ESP_NETIF_DNS_FALLBACK);
+  esp_netif_dns_info_t dns_main;
+  esp_netif_dns_info_t dns_backup;
+  esp_netif_dns_info_t dns_fallback;
 
-  ESP_LOGCONFIG(TAG, "  DNS main: %s", network::IPAddress(dns_main_ip).str().c_str());
-  ESP_LOGCONFIG(TAG, "  DNS backup: %s", network::IPAddress(dns_backup_ip).str().c_str());
-  ESP_LOGCONFIG(TAG, "  DNS fallback: %s", network::IPAddress(dns_fallback_ip).str().c_str());
+  esp_netif_get_dns_info(this->ppp_netif_, ESP_NETIF_DNS_MAIN, &dns_main);
+  esp_netif_get_dns_info(this->ppp_netif_, ESP_NETIF_DNS_BACKUP, &dns_backup);
+  esp_netif_get_dns_info(this->ppp_netif_, ESP_NETIF_DNS_FALLBACK, &dns_fallback);
+
+  ESP_LOGCONFIG(TAG, "  DNS main    : " IPSTR, IP2STR(&dns_main.ip.u_addr.ip4));
+  ESP_LOGCONFIG(TAG, "  DNS backup  : " IPSTR, IP2STR(&dns_backup.ip.u_addr.ip4));
+  ESP_LOGCONFIG(TAG, "  DNS fallback: " IPSTR, IP2STR(&dns_fallback.ip.u_addr.ip4));
 }
 
 std::string ModemComponent::send_at(const std::string &cmd) {
@@ -615,6 +633,83 @@ bool ModemComponent::modem_ready() {
 void ModemComponent::add_on_state_callback(std::function<void(ModemComponentState)> &&callback) {
   this->on_state_callback_.add(std::move(callback));
 }
+
+#ifdef USE_MODEM_WIFI_AP
+
+void ModemComponent::wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+  if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+    wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *) event_data;
+    ESP_LOGI(TAG, "station " MACSTR " join, AID=%d", MAC2STR(event->mac), event->aid);
+  } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+    wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;
+    ESP_LOGI(TAG, "station " MACSTR " leave, AID=%d", MAC2STR(event->mac), event->aid);
+  }
+}
+
+void ModemComponent::wifi_ap_init_(void) {
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+  ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &ModemComponent::wifi_event_handler,
+                                                      NULL, NULL));
+
+  wifi_config_t wifi_config_ap;
+  memset(&wifi_config_ap, 0, sizeof(wifi_config_ap));
+
+  wifi_config_ap.ap.ssid_hidden = 0;
+  wifi_config_ap.ap.channel = 0;
+  wifi_config_ap.ap.max_connection = 3;
+  wifi_config_ap.ap.beacon_interval = 100;
+  wifi_config_ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+
+  const char *ssid = "apmodem";
+  const char *password = "mysecret";
+
+  strncpy((char *) wifi_config_ap.ap.ssid, ssid, sizeof(wifi_config_ap.ap.ssid));
+  strncpy((char *) wifi_config_ap.ap.password, password, sizeof(wifi_config_ap.ap.password));
+
+  // Optionnel: Assurez-vous que les chaînes sont terminées par un caractère nul
+  // wifi_config_ap.ap.ssid[sizeof(wifi_config_ap.ap.ssid) - 1] = '\0';
+  // wifi_config_ap.ap.password[sizeof(wifi_config_ap.ap.password) - 1] = '\0';
+
+  esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap);
+
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config_ap));
+  ESP_ERROR_CHECK(esp_wifi_start());
+
+  // ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s channel:%d", EXAMPLE_ESP_WIFI_SSID,
+  //          EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
+}
+
+void ModemComponent::wifi_ap_() {
+  esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+  assert(ap_netif);
+
+  dhcps_offer_t dhcps_dns_value = OFFER_DNS;
+
+  esp_netif_dns_info_t dns_ppp;
+  ESP_ERROR_CHECK(esp_netif_get_dns_info(this->ppp_netif_, ESP_NETIF_DNS_MAIN, &dns_ppp));
+  ESP_ERROR_CHECK(esp_netif_dhcps_option(ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &dhcps_dns_value,
+                                         sizeof(dhcps_dns_value)));
+  ESP_ERROR_CHECK(esp_netif_set_dns_info(ap_netif, ESP_NETIF_DNS_MAIN, &dns_ppp));
+  esp_netif_dhcps_start(ap_netif);
+
+  this->wifi_ap_init_();
+
+  esp_netif_ip_info_t ip_info;
+  ESP_ERROR_CHECK(esp_netif_get_ip_info(ap_netif, &ip_info));
+
+  ESP_LOGI(TAG, "AP IP Address: " IPSTR, IP2STR(&ip_info.ip));
+
+  // ip_napt_enable(_g_esp_netif_soft_ap_ip.ip.addr, 1);
+  //
+  delay(1000);
+  ip_napt_enable(ip_info.ip.addr, 1);
+
+  // set_dhcps_dns(ap_netif, dns.ip.u_addr.ip4.addr);
+}
+#endif
 
 }  // namespace modem
 }  // namespace esphome
