@@ -93,6 +93,7 @@ class ModemComponent : public Component {
   std::vector<std::string> init_at_commands_;
   std::shared_ptr<DTE> dte_{nullptr};
   esp_netif_t *ppp_netif_{nullptr};
+  esp_netif_t *ap_netif_{nullptr};
   esp_modem_dte_config_t dte_config_;
   esp_modem_dce_config_t dce_config_;
   ModemComponentState state_{ModemComponentState::DISABLED};

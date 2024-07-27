@@ -12,6 +12,10 @@
 #include <esp_event.h>
 #include <driver/gpio.h>
 #include <lwip/dns.h>
+#include <lwip/ip4_addr.h>
+#include <lwip/lwip_napt.h>
+#include <lwip/ip4_napt.h>
+#include <esp_wifi.h>
 
 #include <cxx_include/esp_modem_dte.hpp>
 #include <esp_modem_config.h>
@@ -21,7 +25,7 @@
 #include <iostream>
 
 #ifndef USE_MODEM_MODEL
-#define USE_MODEM_MODEL UNKNOWN
+#define USE_MODEM_MODEL "UNKNOWN"
 #endif
 
 #define ESPHL_ERROR_CHECK(err, message) \
@@ -36,8 +40,10 @@
     ESP_LOGE(TAG, message ": %s", command_result_to_string(err).c_str()); \
   }
 
-static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
-static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
+// static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 2048;
+// static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 1024;
+static const size_t CONFIG_MODEM_UART_RX_BUFFER_SIZE = 4096;
+static const size_t CONFIG_MODEM_UART_TX_BUFFER_SIZE = 2048;
 static const uint8_t CONFIG_MODEM_UART_EVENT_QUEUE_SIZE = 30;
 static const size_t CONFIG_MODEM_UART_EVENT_TASK_STACK_SIZE = 2048;
 static const uint8_t CONFIG_MODEM_UART_EVENT_TASK_PRIORITY = 5;
@@ -56,7 +62,7 @@ ModemComponent::ModemComponent() {
 
 void ModemComponent::dump_config() { this->dump_connect_params_(); }
 
-float ModemComponent::get_setup_priority() const { return setup_priority::WIFI; }  // FIXME AFTER_WIFI
+float ModemComponent::get_setup_priority() const { return setup_priority::AFTER_WIFI; }  // FIXME AFTER_WIFI
 
 bool ModemComponent::can_proceed() { return this->is_connected(); }
 
@@ -113,17 +119,31 @@ void ModemComponent::setup() {
   ESP_LOGCONFIG(TAG, "  Enabled   : %s", this->enabled_ ? "Yes" : "No");
   ESP_LOGCONFIG(TAG, "  Use CMUX  : %s", this->cmux_ ? "Yes" : "No");
 
+  this->ap_netif_ = esp_netif_next(NULL);
+  esp_netif_ip_info_t ap_ip_info;
+
+  if (this->ap_netif_) {
+    ESP_LOGI(TAG, "Got ap wifi netif!");
+    esp_netif_get_ip_info(this->ap_netif_, &ap_ip_info);
+    if (esp_netif_is_netif_up(this->ap_netif_)) {
+      ESP_LOGI(TAG, "ap wifi netif is up!");
+    }
+  }
+
   ESP_LOGV(TAG, "PPP netif setup");
   esp_err_t err;
-  err = esp_netif_init();
-  ESPHL_ERROR_CHECK(err, "PPP netif init error");
-  err = esp_event_loop_create_default();
-  ESPHL_ERROR_CHECK(err, "PPP event loop init error");
+  // err = esp_netif_init();
+  // ESPHL_ERROR_CHECK(err, "PPP netif init error");
+  // err = esp_event_loop_create_default();
+  // ESPHL_ERROR_CHECK(err, "PPP event loop init error");
 
   esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
 
   this->ppp_netif_ = esp_netif_new(&netif_ppp_config);
   assert(this->ppp_netif_);
+
+  ip_napt_enable(_g_esp_netif_soft_ap_ip.ip.addr, 1);
+  // ip_napt_enable(ap_ip_info.ip.addr, 1);
 
   ESP_LOGV(TAG, "Set APN: %s", this->apn_.c_str());
   this->dce_config_ = ESP_MODEM_DCE_DEFAULT_CONFIG(this->apn_.c_str());
@@ -561,6 +581,17 @@ void ModemComponent::dump_connect_params_() {
   ESP_LOGCONFIG(TAG, "  DNS main: %s", network::IPAddress(dns_main_ip).str().c_str());
   ESP_LOGCONFIG(TAG, "  DNS backup: %s", network::IPAddress(dns_backup_ip).str().c_str());
   ESP_LOGCONFIG(TAG, "  DNS fallback: %s", network::IPAddress(dns_fallback_ip).str().c_str());
+
+  // set_dhcps_dns(this->ap_netif_, dns_main_ip);
+  dhcps_offer_t dhcps_dns_value = OFFER_DNS;
+  esp_netif_dns_info_t dns;
+  dns.ip.u_addr.ip4.addr = dns_main_ip->addr;
+  dns.ip.type = IPADDR_TYPE_V4;
+  esp_netif_dhcps_stop(this->ap_netif_);
+  ESP_ERROR_CHECK(esp_netif_dhcps_option(this->ap_netif_, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
+                                         &dhcps_dns_value, sizeof(dhcps_dns_value)));
+  ESP_ERROR_CHECK(esp_netif_set_dns_info(this->ap_netif_, ESP_NETIF_DNS_MAIN, &dns));
+  esp_netif_dhcps_start(this->ap_netif_);
 }
 
 std::string ModemComponent::send_at(const std::string &cmd) {
