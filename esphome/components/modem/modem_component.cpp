@@ -9,13 +9,11 @@
 
 #include <esp_netif.h>
 #include <esp_netif_ppp.h>
+#include <esp_netif_ip_addr.h>
 #include <esp_event.h>
 #include <driver/gpio.h>
 #include <lwip/dns.h>
-#include <lwip/ip4_addr.h>
 #include <lwip/lwip_napt.h>
-#include <lwip/ip4_napt.h>
-#include <esp_wifi.h>
 
 #include <cxx_include/esp_modem_dte.hpp>
 #include <esp_modem_config.h>
@@ -119,7 +117,7 @@ void ModemComponent::setup() {
   ESP_LOGCONFIG(TAG, "  Enabled   : %s", this->enabled_ ? "Yes" : "No");
   ESP_LOGCONFIG(TAG, "  Use CMUX  : %s", this->cmux_ ? "Yes" : "No");
 
-  this->ap_netif_ = esp_netif_next(NULL);
+  this->ap_netif_ = esp_netif_next(NULL);  // .if_key = "WIFI_AP_DEF"
   esp_netif_ip_info_t ap_ip_info;
 
   if (this->ap_netif_) {
@@ -137,8 +135,15 @@ void ModemComponent::setup() {
   // err = esp_event_loop_create_default();
   // ESPHL_ERROR_CHECK(err, "PPP event loop init error");
 
-  esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
+  // esp_netif_config_t netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
 
+  // create netif_ppp_config with high route_prio
+  // (https://github.com/espressif/esp-idf/issues/4611#issuecomment-574109153)
+  esp_netif_inherent_config_t netif_ppp_inherent_config;
+  memcpy(&netif_ppp_inherent_config, ESP_NETIF_BASE_DEFAULT_PPP, sizeof(netif_ppp_inherent_config));
+  netif_ppp_inherent_config.route_prio = 200;
+
+  esp_netif_config_t netif_ppp_config = {.base = &netif_ppp_inherent_config, .stack = ESP_NETIF_NETSTACK_DEFAULT_PPP};
   this->ppp_netif_ = esp_netif_new(&netif_ppp_config);
   assert(this->ppp_netif_);
 
@@ -159,6 +164,9 @@ void ModemComponent::setup() {
   //                                           nullptr);
   err = esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, &ModemComponent::ip_event_handler, nullptr);
   ESPHL_ERROR_CHECK(err, "IP event handler register error");
+
+  Watchdog wdt(60);
+  delay(13000);
 
   this->create_dte_dce_();
 
@@ -584,13 +592,16 @@ void ModemComponent::dump_connect_params_() {
 
   // set_dhcps_dns(this->ap_netif_, dns_main_ip);
   dhcps_offer_t dhcps_dns_value = OFFER_DNS;
-  esp_netif_dns_info_t dns;
-  dns.ip.u_addr.ip4.addr = dns_main_ip->addr;
-  dns.ip.type = IPADDR_TYPE_V4;
+
+  esp_netif_dns_info_t dns_ppp;
+  esp_netif_get_dns_info(this->ppp_netif_, ESP_NETIF_DNS_MAIN, &dns_ppp);
+  // esp_netif_dns_info_t dns;
+  // dns.ip.u_addr.ip4.addr = dns_main_ip->addr;
+  // dns.ip.type = IPADDR_TYPE_V4;
   esp_netif_dhcps_stop(this->ap_netif_);
   ESP_ERROR_CHECK(esp_netif_dhcps_option(this->ap_netif_, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
                                          &dhcps_dns_value, sizeof(dhcps_dns_value)));
-  ESP_ERROR_CHECK(esp_netif_set_dns_info(this->ap_netif_, ESP_NETIF_DNS_MAIN, &dns));
+  ESP_ERROR_CHECK(esp_netif_set_dns_info(this->ap_netif_, ESP_NETIF_DNS_MAIN, &dns_ppp));
   esp_netif_dhcps_start(this->ap_netif_);
 }
 

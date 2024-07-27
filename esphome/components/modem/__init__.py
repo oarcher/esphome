@@ -163,6 +163,7 @@ async def to_code(config):
     add_idf_sdkconfig_option("CONFIG_LWIP_L2_TO_L3_COPY", True)
     add_idf_sdkconfig_option("CONFIG_LWIP_TCPIP_TASK_STACK_SIZE", 1024)  # was 4096
     add_idf_sdkconfig_option("CONFIG_LWIP_IPV4_NAPT", True)
+    # add_idf_sdkconfig_option("CONFIG_ESP_NETIF_TCPIP_ADAPTER_COMPATIBLE_LAYER", True)
     # add_idf_sdkconfig_option("CONFIG_IP_NAPT", True)
 
     cg.add_define("USE_MODEM")
