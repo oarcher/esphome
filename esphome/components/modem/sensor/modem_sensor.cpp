@@ -40,7 +40,7 @@ void ModemSensor::setup() { ESP_LOGI(TAG, "Setting up Modem Sensor..."); }
 
 void ModemSensor::update() {
   ESP_LOGD(TAG, "Modem sensor update");
-  if (global_modem_component->modem_ready()) {
+  if (global_modem_component->dce && global_modem_component->dce->sync() == command_result::OK) {
     this->update_signal_sensors_();
     App.feed_wdt();
     this->update_gnss_sensors_();

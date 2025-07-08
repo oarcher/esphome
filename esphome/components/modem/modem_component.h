@@ -87,9 +87,6 @@ class ModemComponent : public Component {
   AtCommandResult send_at(const std::string &cmd, uint32_t timeout);
   AtCommandResult get_imei();
   bool get_power_status();
-  bool sync();
-  bool modem_ready() { return this->modem_ready(false); }
-  bool modem_ready(bool force_check);
   void enable();
   void disable();
   void reconnect();
@@ -117,18 +114,14 @@ class ModemComponent : public Component {
  protected:
   void modem_create_dce_dte_(int baud_rate);
   void modem_create_dce_dte_() { this->modem_create_dce_dte_(this->modem_restore_state_.baud_rate); }
-  bool modem_command_mode_(bool cmux);
-  bool modem_command_mode_() { return modem_command_mode_(this->cmux_); };
   bool modem_recover_sync_(int baud_rate);
   bool modem_recover_sync_() { return this->modem_recover_sync_(115200); }
-  bool modem_preinit_();
   bool modem_init_();
   int get_baud_rate_();
   bool prepare_sim_();
   void send_init_at_();
   bool is_network_attached_();
   bool start_ppp_();
-  bool stop_ppp_();
   void poweron_();
   void poweroff_();
   void abort_(const std::string &message);
