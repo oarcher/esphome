@@ -132,6 +132,7 @@ config/
 tests/build/
 tests/.esphome/
 /.temp-clang-tidy.cpp
+.clang-tidy.hash
 /.temp/
 .pio/
 
