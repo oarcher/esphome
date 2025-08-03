@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import sensor, uart
+from esphome.components import sensor, text_sensor, uart
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ALTITUDE,
@@ -8,7 +8,9 @@ from esphome.const import (
     CONF_LATITUDE,
     CONF_LONGITUDE,
     CONF_SATELLITES,
+    CONF_SOURCE,
     CONF_SPEED,
+    CONF_UART_ID,
     DEVICE_CLASS_SPEED,
     STATE_CLASS_MEASUREMENT,
     UNIT_DEGREES,
@@ -26,13 +28,12 @@ ICON_LONGITUDE = "mdi:longitude"
 ICON_SATELLITE = "mdi:satellite-variant"
 ICON_SPEEDOMETER = "mdi:speedometer"
 
-DEPENDENCIES = ["uart"]
 AUTO_LOAD = ["sensor"]
 
 CODEOWNERS = ["@coogle", "@ximex"]
 
 gps_ns = cg.esphome_ns.namespace("gps")
-GPS = gps_ns.class_("GPS", cg.Component, uart.UARTDevice)
+GPS = gps_ns.class_("GPS", cg.Component)
 GPSListener = gps_ns.class_("GPSListener")
 
 MULTI_CONF = True
@@ -40,6 +41,8 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(GPS),
+            cv.Optional(CONF_SOURCE): cv.use_id(text_sensor.TextSensor),
+            cv.Optional(CONF_UART_ID): cv.use_id(uart.UARTComponent),
             cv.Optional(CONF_LATITUDE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_DEGREES,
                 icon=ICON_LATITUDE,
@@ -81,17 +84,36 @@ CONFIG_SCHEMA = cv.All(
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
         }
-    )
-    .extend(cv.polling_component_schema("20s"))
-    .extend(uart.UART_DEVICE_SCHEMA),
+    ).extend(cv.polling_component_schema("20s")),
+    cv.has_at_least_one_key(CONF_SOURCE, CONF_UART_ID),
+    # cv.Exclusive(CONF_SOURCE, CONF_UART_ID),
 )
-FINAL_VALIDATE_SCHEMA = uart.final_validate_device_schema("gps", require_rx=True)
+
+print("final")
+
+
+def final_validate(config):
+    if CONF_SOURCE in config:
+        return config
+    if CONF_UART_ID in config:
+        return uart.final_validate_device_schema("gps", require_rx=True)(config)
+    return config
+
+
+FINAL_VALIDATE_SCHEMA = final_validate
 
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    await uart.register_uart_device(var, config)
+    if CONF_SOURCE in config:
+        source = await cg.get_variable(config[CONF_SOURCE])
+        cg.add(var.set_text_sensor_source(source))
+        cg.add_define("USE_GPS_TEXT_SENSOR")
+    elif CONF_UART_ID in config:
+        uart_ = await cg.get_variable(config[CONF_UART_ID])
+        cg.add(var.set_uart_parent(uart_))
+        cg.add_define("USE_GPS_UART")
 
     if latitude_config := config.get(CONF_LATITUDE):
         sens = await sensor.new_sensor(latitude_config)
