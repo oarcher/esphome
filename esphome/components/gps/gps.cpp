@@ -19,7 +19,6 @@ void GPS::dump_config() {
   LOG_SENSOR("  ", "HDOP", this->hdop_sensor_);
 }
 
-#ifdef USE_GPS_TEXT_SENSOR
 void GPS::setup() {
   if (this->text_sensor_source_ != nullptr) {
     this->text_sensor_source_->add_on_state_callback(
@@ -38,7 +37,6 @@ void GPS::on_source_text_received_(const std::string &nmea_sentence) {
     ESP_LOGW(TAG, "Incorrect NMEA sentence: %s", nmea_sentence.c_str());
   }
 }
-#endif
 
 void GPS::update() {
   if (this->latitude_sensor_ != nullptr) {
@@ -69,16 +67,6 @@ void GPS::update() {
     this->hdop_sensor_->publish_state(this->hdop_);
   }
 }
-#ifdef USE_GPS_UART
-void GPS::loop() {
-  while (this->uart_parent_->available() > 0 && !this->has_time_) {
-    if (!this->tiny_gps_.encode(this->uart_parent_->read())) {
-      return;
-    }
-    this->update_internals();
-  }
-}
-#endif
 
 void GPS::update_internals() {
   if (this->tiny_gps_.location.isUpdated()) {

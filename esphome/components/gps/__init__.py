@@ -1,5 +1,5 @@
 import esphome.codegen as cg
-from esphome.components import sensor, text_sensor, uart
+from esphome.components import sensor, text_sensor
 import esphome.config_validation as cv
 from esphome.const import (
     CONF_ALTITUDE,
@@ -20,6 +20,8 @@ from esphome.const import (
 
 CONF_GPS_ID = "gps_id"
 CONF_HDOP = "hdop"
+CONF_GPS_UART_TEXT_ID = "gps_uart_text_id"
+CONF_GPS_UART_BRIDGE_ID = "gps_uart_bridge_id"
 
 ICON_ALTIMETER = "mdi:altimeter"
 ICON_COMPASS = "mdi:compass"
@@ -28,7 +30,7 @@ ICON_LONGITUDE = "mdi:longitude"
 ICON_SATELLITE = "mdi:satellite-variant"
 ICON_SPEEDOMETER = "mdi:speedometer"
 
-AUTO_LOAD = ["sensor"]
+AUTO_LOAD = ["sensor", "text_sensor"]
 
 CODEOWNERS = ["@coogle", "@ximex"]
 
@@ -41,8 +43,7 @@ CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(GPS),
-            cv.Optional(CONF_SOURCE): cv.use_id(text_sensor.TextSensor),
-            cv.Optional(CONF_UART_ID): cv.use_id(uart.UARTComponent),
+            cv.Exclusive(CONF_SOURCE, "gps_source"): cv.use_id(text_sensor.TextSensor),
             cv.Optional(CONF_LATITUDE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_DEGREES,
                 icon=ICON_LATITUDE,
@@ -85,35 +86,18 @@ CONFIG_SCHEMA = cv.All(
             ),
         }
     ).extend(cv.polling_component_schema("20s")),
-    cv.has_at_least_one_key(CONF_SOURCE, CONF_UART_ID),
-    # cv.Exclusive(CONF_SOURCE, CONF_UART_ID),
+    cv.has_at_least_one_key(CONF_UART_ID, CONF_SOURCE),
 )
-
-print("final")
-
-
-def final_validate(config):
-    if CONF_SOURCE in config:
-        return config
-    if CONF_UART_ID in config:
-        return uart.final_validate_device_schema("gps", require_rx=True)(config)
-    return config
-
-
-FINAL_VALIDATE_SCHEMA = final_validate
 
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    if CONF_SOURCE in config:
-        source = await cg.get_variable(config[CONF_SOURCE])
-        cg.add(var.set_text_sensor_source(source))
-        cg.add_define("USE_GPS_TEXT_SENSOR")
-    elif CONF_UART_ID in config:
-        uart_ = await cg.get_variable(config[CONF_UART_ID])
-        cg.add(var.set_uart_parent(uart_))
-        cg.add_define("USE_GPS_UART")
+
+    source = await cg.get_variable(config[CONF_SOURCE])
+
+    # Set the NMEA text sensor source
+    cg.add(var.set_text_sensor_source(source))
 
     if latitude_config := config.get(CONF_LATITUDE):
         sens = await sensor.new_sensor(latitude_config)
