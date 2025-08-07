@@ -14,7 +14,7 @@ CONFIG_SCHEMA = (
     text_sensor.text_sensor_schema(UARTTextSensor)
     .extend(
         {
-            cv.Optional(CONF_SEPARATOR, default="\n\r"): cv.string,
+            cv.Optional(CONF_SEPARATOR, default="\r\n"): cv.string,
         }
     )
     .extend(uart.UART_DEVICE_SCHEMA)
@@ -27,5 +27,4 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
 
-    separator = config[CONF_SEPARATOR]
-    cg.add(var.set_separator(separator))
+    cg.add(var.set_separator(config[CONF_SEPARATOR]))

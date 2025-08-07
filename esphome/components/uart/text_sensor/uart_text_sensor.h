@@ -13,7 +13,8 @@ class UARTTextSensor : public text_sensor::TextSensor, public uart::UARTDevice, 
 
  protected:
   std::string buffer_;
-  std::string separator_ = "\n\r";
+  std::string separator_ = "\r\n";
+  size_t max_buffer_size_ = 255;
 };
 
 }  // namespace uart
