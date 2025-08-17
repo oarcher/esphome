@@ -28,10 +28,6 @@ void ModemHandler::modem_create_dte_dce(int baud_rate) {
   dte_config.uart_config.rx_buffer_size = this->rx_buffer_size;
   dte_config.uart_config.tx_buffer_size = this->tx_buffer_size;
   dte_config.uart_config.event_queue_size = this->uart_event_queue_size;
-  if (baud_rate != 0) {
-    ESP_LOGD(TAG, "DTE baud rate: %d", baud_rate);
-    dte_config.uart_config.baud_rate = baud_rate;
-  }
 
   dte_config.task_stack_size = this->uart_event_task_stack_size;
   dte_config.task_priority = this->uart_event_task_priority;
@@ -88,17 +84,6 @@ AtCommandResult ModemHandler::send_at(const std::string &cmd, uint32_t timeout, 
     at_command_result.esp_modem_command_result = command_result::FAIL;
   }
   return at_command_result;
-}
-
-bool ModemHandler::get_power_status() {
-  if (this->status_pin) {
-    return this->status_pin->digital_read();
-  }
-  if (this->dce && this->dce->sync() == command_result::OK) {
-    return true;
-  }
-  ESP_LOGW(TAG, "No status pin, modem sync failed. Assuming powered on.");
-  return true;
 }
 
 bool ModemHandler::get_signal_quality(float &out_rssi, float &out_ber) {
