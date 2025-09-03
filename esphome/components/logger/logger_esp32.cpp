@@ -155,12 +155,6 @@ void Logger::pre_setup() {
   }
 
   global_logger = this;
-#if defined(USE_ESP_IDF) || defined(USE_ESP32_FRAMEWORK_ARDUINO)
-  esp_log_set_vprintf(esp_idf_log_vprintf_);
-  if (ESPHOME_LOG_LEVEL >= ESPHOME_LOG_LEVEL_VERBOSE) {
-    esp_log_level_set("*", ESP_LOG_VERBOSE);
-  }
-#endif  // USE_ESP_IDF || USE_ESP32_FRAMEWORK_ARDUINO
 
   ESP_LOGI(TAG, "Log initialized");
 }

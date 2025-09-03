@@ -15,7 +15,9 @@ from esphome.const import (
     CONF_FRAMEWORK,
     CONF_IGNORE_EFUSE_CUSTOM_MAC,
     CONF_IGNORE_EFUSE_MAC_CRC,
-    CONF_LOG_LEVEL,
+    CONF_LEVEL,
+    CONF_LOGGER,
+    CONF_LOGS,
     CONF_NAME,
     CONF_PATH,
     CONF_PLATFORM_VERSION,
@@ -78,6 +80,7 @@ CONF_COMPILER_OPTIMIZATION = "compiler_optimization"
 CONF_ENABLE_IDF_EXPERIMENTAL_FEATURES = "enable_idf_experimental_features"
 CONF_ENABLE_LWIP_ASSERT = "enable_lwip_assert"
 CONF_EXECUTE_FROM_PSRAM = "execute_from_psram"
+CONF_INITIAL_LEVEL = "initial_level"
 CONF_RELEASE = "release"
 
 LOG_LEVELS_IDF = [
@@ -623,6 +626,18 @@ def _validate_idf_component(config: ConfigType) -> ConfigType:
     return config
 
 
+ESP_IDF_LOGGER_SCHEMA = cv.Schema(
+    {
+        cv.Optional(CONF_LEVEL, default="ERROR"): cv.one_of(
+            *LOG_LEVELS_IDF, upper=True
+        ),
+        cv.Optional(CONF_INITIAL_LEVEL): cv.one_of(*LOG_LEVELS_IDF, upper=True),
+        cv.Optional(CONF_LOGS, default={}): cv.Schema(
+            {cv.string: cv.one_of(*LOG_LEVELS_IDF, upper=True)}
+        ),
+    }
+)
+
 ESP_IDF_FRAMEWORK_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -633,9 +648,7 @@ ESP_IDF_FRAMEWORK_SCHEMA = cv.All(
             cv.Optional(CONF_SDKCONFIG_OPTIONS, default={}): {
                 cv.string_strict: cv.string_strict
             },
-            cv.Optional(CONF_LOG_LEVEL, default="ERROR"): cv.one_of(
-                *LOG_LEVELS_IDF, upper=True
-            ),
+            cv.Optional(CONF_LOGGER): ESP_IDF_LOGGER_SCHEMA,
             cv.Optional(CONF_ADVANCED, default={}): cv.Schema(
                 {
                     cv.Optional(CONF_ASSERTION_LEVEL): cv.one_of(
@@ -950,9 +963,20 @@ async def to_code(config):
             ),
         )
 
-        add_idf_sdkconfig_option(
-            f"CONFIG_LOG_DEFAULT_LEVEL_{conf[CONF_LOG_LEVEL]}", True
-        )
+        if framework_logger_conf := conf.get(CONF_LOGGER):
+            max_level = framework_logger_conf[CONF_LEVEL]
+            default_level = framework_logger_conf.get(CONF_INITIAL_LEVEL, max_level)
+
+            add_idf_sdkconfig_option(f"CONFIG_LOG_MAXIMUM_LEVEL_{max_level}", True)
+            add_idf_sdkconfig_option(f"CONFIG_LOG_DEFAULT_LEVEL_{default_level}", True)
+
+            for tag, log_level in framework_logger_conf[CONF_LOGS].items():
+                idf_level = log_level
+                if idf_level == "VERY_VERBOSE":
+                    idf_level = "VERBOSE"
+                cg.add(
+                    cg.RawExpression(f'esp_log_level_set("{tag}", ESP_LOG_{idf_level})')
+                )
 
         for name, value in conf[CONF_SDKCONFIG_OPTIONS].items():
             add_idf_sdkconfig_option(name, RawSdkconfigValue(value))
