@@ -34,13 +34,15 @@ void ULN2003::loop() {
   this->write_step_(this->current_uln_pos_);
 }
 void ULN2003::dump_config() {
-  ESP_LOGCONFIG(TAG, "ULN2003:");
+  ESP_LOGCONFIG(TAG,
+                "ULN2003:\n"
+                "  Sleep when done: %s",
+                YESNO(this->sleep_when_done_));
   LOG_PIN("  Pin A: ", this->pin_a_);
   LOG_PIN("  Pin B: ", this->pin_b_);
   LOG_PIN("  Pin C: ", this->pin_c_);
   LOG_PIN("  Pin D: ", this->pin_d_);
-  ESP_LOGCONFIG(TAG, "  Sleep when done: %s", YESNO(this->sleep_when_done_));
-  const char *step_mode_s = "";
+  const char *step_mode_s;
   switch (this->step_mode_) {
     case ULN2003_STEP_MODE_FULL_STEP:
       step_mode_s = "FULL STEP";
@@ -50,6 +52,9 @@ void ULN2003::dump_config() {
       break;
     case ULN2003_STEP_MODE_WAVE_DRIVE:
       step_mode_s = "WAVE DRIVE";
+      break;
+    default:
+      step_mode_s = "UNKNOWN";
       break;
   }
   ESP_LOGCONFIG(TAG, "  Step Mode: %s", step_mode_s);

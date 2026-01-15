@@ -1,11 +1,13 @@
-import esphome.codegen as cg
-import esphome.config_validation as cv
 from esphome import automation
+import esphome.codegen as cg
 from esphome.components import i2c, sensor
+import esphome.config_validation as cv
 from esphome.const import (
     CONF_ACTUAL_GAIN,
+    CONF_ACTUAL_INTEGRATION_TIME,
     CONF_AMBIENT_LIGHT,
     CONF_AUTO_MODE,
+    CONF_FULL_SPECTRUM_COUNTS,
     CONF_GAIN,
     CONF_GLASS_ATTENUATION_FACTOR,
     CONF_ID,
@@ -14,7 +16,6 @@ from esphome.const import (
     CONF_REPEAT,
     CONF_TRIGGER_ID,
     CONF_TYPE,
-    DEVICE_CLASS_DISTANCE,
     DEVICE_CLASS_ILLUMINANCE,
     ICON_BRIGHTNESS_5,
     ICON_BRIGHTNESS_6,
@@ -27,8 +28,6 @@ from esphome.const import (
 CODEOWNERS = ["@latonita"]
 DEPENDENCIES = ["i2c"]
 
-CONF_ACTUAL_INTEGRATION_TIME = "actual_integration_time"
-CONF_FULL_SPECTRUM_COUNTS = "full_spectrum_counts"
 CONF_INFRARED_COUNTS = "infrared_counts"
 CONF_ON_PS_HIGH_THRESHOLD = "on_ps_high_threshold"
 CONF_ON_PS_LOW_THRESHOLD = "on_ps_low_threshold"
@@ -169,7 +168,6 @@ CONFIG_SCHEMA = cv.All(
                     unit_of_measurement=UNIT_COUNTS,
                     icon=ICON_BRIGHTNESS_5,
                     accuracy_decimals=0,
-                    device_class=DEVICE_CLASS_ILLUMINANCE,
                     state_class=STATE_CLASS_MEASUREMENT,
                 ),
                 key=CONF_NAME,
@@ -179,7 +177,6 @@ CONFIG_SCHEMA = cv.All(
                     unit_of_measurement=UNIT_COUNTS,
                     icon=ICON_BRIGHTNESS_7,
                     accuracy_decimals=0,
-                    device_class=DEVICE_CLASS_ILLUMINANCE,
                     state_class=STATE_CLASS_MEASUREMENT,
                 ),
                 key=CONF_NAME,
@@ -189,7 +186,6 @@ CONFIG_SCHEMA = cv.All(
                     unit_of_measurement=UNIT_COUNTS,
                     icon=ICON_PROXIMITY,
                     accuracy_decimals=0,
-                    device_class=DEVICE_CLASS_DISTANCE,
                     state_class=STATE_CLASS_MEASUREMENT,
                 ),
                 key=CONF_NAME,
@@ -198,7 +194,6 @@ CONFIG_SCHEMA = cv.All(
                 sensor.sensor_schema(
                     icon=ICON_GAIN,
                     accuracy_decimals=0,
-                    device_class=DEVICE_CLASS_ILLUMINANCE,
                     state_class=STATE_CLASS_MEASUREMENT,
                 ),
                 key=CONF_NAME,

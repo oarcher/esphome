@@ -1,12 +1,12 @@
 #pragma once
+#include "mqtt_backend.h"
 
+#ifdef USE_MQTT
 #ifdef USE_ESP8266
 
-#include "mqtt_backend.h"
 #include <AsyncMqttClient.h>
 
-namespace esphome {
-namespace mqtt {
+namespace esphome::mqtt {
 
 class MQTTBackendESP8266 final : public MQTTBackend {
  public:
@@ -66,7 +66,7 @@ class MQTTBackendESP8266 final : public MQTTBackend {
   AsyncMqttClient mqtt_client_;
 };
 
-}  // namespace mqtt
-}  // namespace esphome
+}  // namespace esphome::mqtt
 
 #endif  // defined(USE_ESP8266)
+#endif
