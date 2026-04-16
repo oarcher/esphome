@@ -335,7 +335,15 @@ ModemComponentState ModemComponent::handle_state_connecting_() {
   this->modem_handler->prepare_sim();
   this->modem_handler->dce->set_network_attachment_state(1);
 
-  this->modem_handler->dce->get_network_attachment_state(attachement_state);
+  for (int i = 0; i < 30; i++) {
+    this->modem_handler->dce->get_network_attachment_state(attachement_state);
+    if (attachement_state) {
+      ESP_LOGI(TAG, "Modem attached after %ds", i);
+      break;
+    }
+    App.feed_wdt();
+    delay(1000);  // NOLINT
+  }
 
   if (!attachement_state) {
     ESP_LOGW(TAG, "Modem not yet ready to connect");
