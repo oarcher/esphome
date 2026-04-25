@@ -113,6 +113,7 @@ class ModemComponent : public Component {
 
   uint32_t next_loop_millis_{0};
   uint8_t wait_ip_retry_{0};
+  uint8_t attach_retry_{0};
 
   ModemRestoreState modem_restore_state_{};
   ESPPreferenceObject pref_;

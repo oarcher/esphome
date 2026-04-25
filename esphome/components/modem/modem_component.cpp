@@ -324,41 +324,23 @@ ModemComponentState ModemComponent::handle_state_enabling_() {
 ModemComponentState ModemComponent::handle_state_synced_() { return ModemComponentState::MODEM_CONNECTING; }
 
 ModemComponentState ModemComponent::handle_state_connecting_() {
-  // Merges INIT_NETWORK and START_PPP states
-  if (this->modem_handler->dce->sync() != esp_modem::command_result::OK) {
-    ESP_LOGW(TAG, "Modem not synced during network init");
-    return ModemComponentState::MODEM_ENABLING;
-  }
-
   int attachement_state = 0;
-  this->modem_handler->dce->set_radio_state(1);
-  this->modem_handler->prepare_sim();
-  this->modem_handler->dce->set_network_attachment_state(1);
-
-  for (int i = 0; i < 30; i++) {
-    this->modem_handler->dce->get_network_attachment_state(attachement_state);
-    if (attachement_state) {
-      ESP_LOGI(TAG, "Modem attached after %ds", i);
-      break;
-    }
-    App.feed_wdt();
-    delay(1000);  // NOLINT
-  }
-
+  this->modem_handler->dce->get_network_attachment_state(attachement_state);
   if (!attachement_state) {
-    ESP_LOGW(TAG, "Modem not yet ready to connect");
-    this->modem_handler->modem_log_status();
-    this->loop_delay_(4000);
+    if (--this->attach_retry_ == 0) {
+      ESP_LOGW(TAG, "Modem not yet ready to connect");
+      this->modem_handler->modem_log_status();
+      return ModemComponentState::MODEM_DISCONNECTING;
+    }
+    this->loop_delay_(1000);
     return ModemComponentState::MODEM_CONNECTING;
   }
-
+  ESP_LOGI(TAG, "Modem attached after %ds", 30 - this->attach_retry_);
   ESP_LOGI(TAG, "Modem initialized and ready, starting PPP");
-
   if (!this->modem_handler->dce->set_mode(esp_modem::modem_mode::CMUX_MODE)) {
     ESP_LOGE(TAG, "Failed to enter PPP. Resetting modem.");
     return ModemComponentState::MODEM_DISCONNECTING;
   }
-
   return ModemComponentState::MODEM_WAIT_IP;
 }
 
@@ -419,6 +401,17 @@ void ModemComponent::on_enter_state_(ModemComponentState state) {
     case ModemComponentState::MODEM_ENABLING:
       set_timeout("modem_timeout", this->timeout_,
                   [this]() { this->abort_("Modem was not able to connect (timeout)"); });
+      break;
+    case ModemComponentState::MODEM_CONNECTING:
+      this->attach_retry_ = 30;
+      if (this->modem_handler->dce->sync() != esp_modem::command_result::OK) {
+        ESP_LOGW(TAG, "Modem not synced during network init");
+        this->attach_retry_ = 0;
+        break;
+      }
+      this->modem_handler->dce->set_radio_state(1);
+      this->modem_handler->prepare_sim();
+      this->modem_handler->dce->set_network_attachment_state(1);
       break;
     case ModemComponentState::MODEM_WAIT_IP:
       this->wait_ip_retry_ = 10;
